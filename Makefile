@@ -1,8 +1,12 @@
 install:
 	npm install
 
-start:
-	npx babel-node 'src/bin/gendiff.js'
+develop:
+	npx webpack-dev-server
+
+build:
+	rm -rf dist
+	NODE_ENV=production npx webpack
 
 publish:
 	npm publish
