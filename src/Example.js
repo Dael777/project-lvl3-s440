@@ -4,7 +4,7 @@ export default class Example {
   }
 
   init() {
-    this.element.textContent = 'RSS Example';
-    console.log('ehu!');
+    this.element.textContent = 'RSS Feed';
+    console.log('done!');
   }
 }
