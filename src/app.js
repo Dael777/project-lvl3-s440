@@ -9,12 +9,14 @@ export default () => {
   const inputState = {
     valid: null,
     errorName: null,
+    parseErrors: null,
     feedToAdd: null,
   };
 
   const activeFeedsList = [];
   const feedUrl = document.querySelector('#feed-url');
   const errorShow = feedUrl.nextElementSibling;
+  const parseErrorField = document.querySelector('#parse-error');
   const addFeedForm = document.querySelector('#add-feed-form');
   const rssFeedsContainer = document.querySelector('#rss-feeds');
 
@@ -30,6 +32,10 @@ export default () => {
         break;
       default: break;
     }
+  });
+
+  watch(inputState, 'parseErrors', () => {
+    parseErrorField.textContent = inputState.parseErrors;
   });
 
   watch(inputState, 'data', () => {
@@ -89,11 +95,18 @@ export default () => {
         console.log(doc);
         inputState.data = doc;
         activeFeedsList.push(url);
+      })
+      .catch((error) => {
+        console.log(error.response);
+        console.log(error.request);
+        console.log(error.message);
+        inputState.parseErrors = error.message;
       });
   };
 
   const addFeed = (e) => {
     e.preventDefault();
+    inputState.parseErrors = null;
     if (inputState.valid) {
       getRssFeed(feedUrl.value);
       feedUrl.classList.remove('is-valid', 'is-invalid');
