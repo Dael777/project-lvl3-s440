@@ -6,107 +6,114 @@ import validator from 'validator';
 import axios from 'axios';
 
 export default () => {
-  const inputState = {
-    valid: null,
-    errorName: null,
-    parseErrors: null,
+  const state = {
+    inputValid: null,
+    inputError: null,
+    formStatus: null,
+    formError: null,
     feedToAdd: null,
+    activeFeedsList: [],
   };
-
-  const activeFeedsList = [];
-  const feedUrl = document.querySelector('#feed-url');
-  const errorShow = feedUrl.nextElementSibling;
-  const parseErrorField = document.querySelector('#parse-error');
+  const addFeedInput = document.querySelector('#feed-url');
+  const errorShow = addFeedInput.nextElementSibling;
+  const formErrorField = document.querySelector('#parse-error');
   const addFeedForm = document.querySelector('#add-feed-form');
   const rssFeedsContainer = document.querySelector('#rss-feeds');
+  const formSpinner = document.querySelector('#form-spinner');
 
-  watch(inputState, ['valid', 'errorName'], () => {
-    feedUrl.classList.remove('is-valid', 'is-invalid');
-    switch (inputState.valid) {
-      case true:
-        feedUrl.classList.add('is-valid');
-        break;
-      case false:
-        feedUrl.classList.add('is-invalid');
-        errorShow.textContent = inputState.errorName;
-        break;
-      default: break;
+  watch(state, ['inputValid', 'inputError'], () => {
+    addFeedInput.classList.remove('is-valid', 'is-invalid');
+    if (state.inputValid === null) {
+      return;
     }
-  });
-
-  watch(inputState, 'parseErrors', () => {
-    parseErrorField.textContent = inputState.parseErrors;
-  });
-
-  watch(inputState, 'data', () => {
-    if (inputState.data) {
-      const row = document.createElement('div');
-      row.classList.add('row');
-      const col12 = document.createElement('div');
-      col12.classList.add('col-12');
-      const h2 = document.createElement('h2');
-      h2.textContent = inputState.data.getElementsByTagName('title')[0].textContent;
-      const h5 = document.createElement('h5');
-      h5.textContent = inputState.data.getElementsByTagName('description')[0].textContent;
-      const ul = document.createElement('ul');
-      const items = inputState.data.querySelectorAll('item');
-      items.forEach((item) => {
-        const li = document.createElement('li');
-        const a = document.createElement('a');
-        a.textContent = item.children[0].textContent;
-        a.href = item.children[3].textContent;
-        li.append(a);
-        ul.append(li);
-      });
-      col12.append(h2, h5, ul);
-      row.append(col12);
-      rssFeedsContainer.append(row);
+    if (!state.inputValid) {
+      addFeedInput.classList.add('is-invalid');
+      errorShow.textContent = state.inputError;
+      return;
     }
+    addFeedInput.classList.add('is-valid');
   });
+
+  watch(state, 'formError', () => {
+    formErrorField.textContent = state.formError;
+  });
+
+  watch(state, 'feedToAdd', () => {
+    const items = state.feedToAdd.querySelectorAll('item');
+    const itemsList = [...items].map(item => `<li><a href="${item.children[3].textContent}">${item.children[0].textContent}</a></li>`).join('');
+    const row = document.createElement('div');
+    row.classList.add('row');
+    row.innerHTML = `
+      <div class="col-12">
+        <h2>${state.feedToAdd.getElementsByTagName('title')[0].textContent}</h2>
+        <h5>${state.feedToAdd.getElementsByTagName('description')[0].textContent}</h5>
+        <ul>${itemsList}</ul>
+      </div>
+    `;
+    rssFeedsContainer.append(row);
+  });
+
+  watch(state, 'formStatus', () => {
+    if (!state.formStatus) {
+      formSpinner.classList.add('d-none');
+      return;
+    }
+    formSpinner.classList.remove('d-none');
+  });
+
+  const parse = ({ data }) => {
+    const parser = new DOMParser();
+    return parser.parseFromString(data, 'application/xml');
+  };
 
   const inputValidate = () => {
-    if (feedUrl.value.length === 0) {
-      inputState.valid = null;
+    if (addFeedInput.value.length === 0) {
+      state.inputValid = null;
       return;
     }
-    if (!validator.isURL(feedUrl.value)) {
-      inputState.valid = false;
-      inputState.errorName = 'Please enter correct URL';
+    if (!validator.isURL(addFeedInput.value)) {
+      state.inputValid = false;
+      state.inputError = 'Please enter correct URL';
       return;
     }
-    if (activeFeedsList.indexOf(feedUrl.value) > -1) {
-      inputState.valid = false;
-      inputState.errorName = 'This feed has already been added';
+    if (state.activeFeedsList.indexOf(addFeedInput.value) > -1) {
+      state.inputValid = false;
+      state.inputError = 'This feed has already been added';
       return;
     }
-    inputState.valid = true;
+    state.inputValid = true;
   };
-  feedUrl.addEventListener('input', inputValidate);
+  addFeedInput.addEventListener('input', inputValidate);
 
   const getRssFeed = (url) => {
+    state.formStatus = 'pending';
     axios({
       method: 'get',
       url: `https://cors-anywhere.herokuapp.com/${url}`,
     })
       .then((response) => {
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(response.data, 'application/xml');
-        console.log(doc);
-        inputState.data = doc;
-        activeFeedsList.push(url);
+        state.formStatus = null;
+        const doc = parse(response);
+        if (doc.documentElement.tagName !== 'rss') {
+          state.formError = 'There is no RSS channel on this address';
+          return;
+        }
+        state.inputValid = null;
+        addFeedInput.value = '';
+        state.feedToAdd = doc;
+        state.activeFeedsList.push(url);
       })
       .catch((error) => {
-        inputState.parseErrors = error.message;
+        state.formStatus = null;
+        state.formError = error.message;
       });
   };
 
   const addFeed = (e) => {
     e.preventDefault();
-    inputState.parseErrors = null;
-    if (inputState.valid) {
-      getRssFeed(feedUrl.value);
-      feedUrl.classList.remove('is-valid', 'is-invalid');
-      feedUrl.value = '';
+    state.formError = null;
+    if (state.inputValid) {
+      getRssFeed(addFeedInput.value);
     }
   };
   addFeedForm.addEventListener('submit', addFeed);
