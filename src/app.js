@@ -51,7 +51,6 @@ export default () => {
       const ul = document.createElement('ul');
       const items = inputState.data.querySelectorAll('item');
       items.forEach((item) => {
-        console.log(item);
         const li = document.createElement('li');
         const a = document.createElement('a');
         a.textContent = item.children[0].textContent;
@@ -97,9 +96,6 @@ export default () => {
         activeFeedsList.push(url);
       })
       .catch((error) => {
-        console.log(error.response);
-        console.log(error.request);
-        console.log(error.message);
         inputState.parseErrors = error.message;
       });
   };
