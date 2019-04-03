@@ -13,6 +13,7 @@ export default () => {
     formError: null,
     feedToAdd: null,
     activeFeedsList: [],
+    feedNumber: 0,
   };
   const addFeedInput = document.querySelector('#feed-url');
   const errorShow = addFeedInput.nextElementSibling;
@@ -40,7 +41,22 @@ export default () => {
 
   watch(state, 'feedToAdd', () => {
     const items = state.feedToAdd.querySelectorAll('item');
-    const itemsList = [...items].map(item => `<li><a href="${item.children[3].textContent}">${item.children[0].textContent}</a></li>`).join('');
+    const itemsList = [...items].map((item, index) => `<li>
+      <a href="${item.children[2].textContent}" data-toggle="modal" data-target="#item-${state.feedNumber}-${index}">${item.children[0].textContent}</a>
+      <div class="modal fade" id="item-${state.feedNumber}-${index}" tabindex="-1" role="dialog" aria-labelledby="exampleModalLabel" aria-hidden="true">
+        <div class="modal-dialog" role="document">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h5 class="modal-title" id="exampleModalLabel">Article description</h5>
+              <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                <span aria-hidden="true">&times;</span>
+              </button>
+            </div>
+            <div class="modal-body">${item.children[1].textContent}</div>
+         </div>
+        </div>
+      </div>
+      </li>`).join('');
     const row = document.createElement('div');
     row.classList.add('row');
     row.innerHTML = `
@@ -99,6 +115,7 @@ export default () => {
           return;
         }
         state.inputValid = null;
+        state.feedNumber += 1;
         addFeedInput.value = '';
         state.feedToAdd = doc;
         state.activeFeedsList.push(url);
