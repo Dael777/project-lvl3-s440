@@ -12,8 +12,10 @@ export default () => {
     formStatus: null,
     formError: null,
     feedToAdd: null,
-    activeFeedsList: [],
+    addedFeeds: [],
     feedNumber: 0,
+    updatedFeedName: null,
+    updatedFeedDoc: null,
   };
   const addFeedInput = document.querySelector('#feed-url');
   const errorShow = addFeedInput.nextElementSibling;
@@ -21,6 +23,48 @@ export default () => {
   const addFeedForm = document.querySelector('#add-feed-form');
   const rssFeedsContainer = document.querySelector('#rss-feeds');
   const formSpinner = document.querySelector('#form-spinner');
+
+  const parse = ({ data }) => {
+    const parser = new DOMParser();
+    return parser.parseFromString(data, 'application/xml');
+  };
+
+  const createHtmlItems = items => [...items].map(
+    (item, index) => `<li>
+      <a href="${item.children[2].textContent}" data-toggle="modal" data-target="#item-${state.feedNumber}-${index}">${item.children[0].textContent}</a>
+      <div class="modal fade" id="item-${state.feedNumber}-${index}" tabindex="-1" role="dialog" aria-labelledby="exampleModalLabel" aria-hidden="true">
+        <div class="modal-dialog" role="document">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h5 class="modal-title" id="exampleModalLabel">Article description</h5>
+              <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                <span aria-hidden="true">&times;</span>
+              </button>
+            </div>
+            <div class="modal-body">${item.children[1].textContent}</div>
+         </div>
+        </div>
+      </div>
+      </li>`,
+  ).join('');
+
+  const updateArticles = (feed) => {
+    const timer = setTimeout(() => {
+      axios({
+        method: 'get',
+        url: `https://cors-anywhere.herokuapp.com/${feed}`,
+      })
+        .then((response) => {
+          const doc = parse(response);
+          state.updatedFeedName = feed;
+          state.updatedFeedDoc = doc;
+        })
+        .finally(() => {
+          clearTimeout(timer);
+          updateArticles(feed);
+        });
+    }, 2000);
+  };
 
   watch(state, ['inputValid', 'inputError'], () => {
     addFeedInput.classList.remove('is-valid', 'is-invalid');
@@ -41,29 +85,15 @@ export default () => {
 
   watch(state, 'feedToAdd', () => {
     const items = state.feedToAdd.querySelectorAll('item');
-    const itemsList = [...items].map((item, index) => `<li>
-      <a href="${item.children[2].textContent}" data-toggle="modal" data-target="#item-${state.feedNumber}-${index}">${item.children[0].textContent}</a>
-      <div class="modal fade" id="item-${state.feedNumber}-${index}" tabindex="-1" role="dialog" aria-labelledby="exampleModalLabel" aria-hidden="true">
-        <div class="modal-dialog" role="document">
-          <div class="modal-content">
-            <div class="modal-header">
-              <h5 class="modal-title" id="exampleModalLabel">Article description</h5>
-              <button type="button" class="close" data-dismiss="modal" aria-label="Close">
-                <span aria-hidden="true">&times;</span>
-              </button>
-            </div>
-            <div class="modal-body">${item.children[1].textContent}</div>
-         </div>
-        </div>
-      </div>
-      </li>`).join('');
+    const newItems = createHtmlItems(items);
     const row = document.createElement('div');
     row.classList.add('row');
+    row.setAttribute('data-feed', state.addedFeeds[state.addedFeeds.length - 1]);
     row.innerHTML = `
       <div class="col-12">
         <h2>${state.feedToAdd.getElementsByTagName('title')[0].textContent}</h2>
         <h5>${state.feedToAdd.getElementsByTagName('description')[0].textContent}</h5>
-        <ul>${itemsList}</ul>
+        <ul>${newItems}</ul>
       </div>
     `;
     rssFeedsContainer.append(row);
@@ -77,10 +107,18 @@ export default () => {
     formSpinner.classList.remove('d-none');
   });
 
-  const parse = ({ data }) => {
-    const parser = new DOMParser();
-    return parser.parseFromString(data, 'application/xml');
-  };
+  watch(state, 'updatedFeedDoc', () => {
+    const updatedFeedName = document.querySelector(`[data-feed="${state.updatedFeedName}"]`);
+    const currentArticles = updatedFeedName.querySelectorAll('li a');
+    const currentHrefs = [...currentArticles].map(currentArticle => currentArticle.href);
+    const updatedArticles = state.updatedFeedDoc.querySelectorAll('item');
+    const newArticles = [...updatedArticles].filter(
+      updatedArticle => !currentHrefs.includes(updatedArticle.children[2].textContent),
+    );
+    const currentUl = updatedFeedName.querySelector('ul');
+    const newItems = createHtmlItems(newArticles);
+    currentUl.insertAdjacentHTML('beforeEnd', newItems);
+  });
 
   const inputValidate = () => {
     if (addFeedInput.value.length === 0) {
@@ -92,7 +130,7 @@ export default () => {
       state.inputError = 'Please enter correct URL';
       return;
     }
-    if (state.activeFeedsList.indexOf(addFeedInput.value) > -1) {
+    if (state.addedFeeds.indexOf(addFeedInput.value) > -1) {
       state.inputValid = false;
       state.inputError = 'This feed has already been added';
       return;
@@ -118,7 +156,8 @@ export default () => {
         state.feedNumber += 1;
         addFeedInput.value = '';
         state.feedToAdd = doc;
-        state.activeFeedsList.push(url);
+        state.addedFeeds.push(url);
+        updateArticles(state.addedFeeds[state.addedFeeds.length - 1]);
       })
       .catch((error) => {
         state.formStatus = null;
