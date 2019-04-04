@@ -4,34 +4,68 @@ import 'bootstrap/dist/css/bootstrap.min.css';
 import { watch } from 'melanke-watchjs';
 import validator from 'validator';
 import axios from 'axios';
+import i18next from 'i18next';
 
 export default () => {
+  i18next.init({
+    lng: 'en',
+    resources: {
+      en: {
+        translation: {
+          incorrectUrl: 'Please enter correct URL',
+          doubledUrl: 'This feed has already been added',
+          noRss: 'There is no RSS channel on this address',
+        },
+      },
+    },
+  });
+
   const state = {
-    inputValid: null,
-    inputError: null,
+    newFeedUrl: null,
+    newFeed: {
+      title: null,
+      description: null,
+      articles: [],
+    },
+    updatedFeedUrl: null,
+    updatedFeedArticles: null,
     formStatus: null,
-    formError: null,
-    feedToAdd: null,
-    addedFeeds: [],
     feedNumber: 0,
-    updatedFeedName: null,
-    updatedFeedDoc: null,
+    addedFeeds: [],
+    error: null,
   };
+  const corsProxy = 'https://cors-anywhere.herokuapp.com/';
   const addFeedInput = document.querySelector('#feed-url');
   const errorShow = addFeedInput.nextElementSibling;
-  const formErrorField = document.querySelector('#parse-error');
   const addFeedForm = document.querySelector('#add-feed-form');
   const rssFeedsContainer = document.querySelector('#rss-feeds');
   const formSpinner = document.querySelector('#form-spinner');
 
-  const parse = ({ data }) => {
-    const parser = new DOMParser();
-    return parser.parseFromString(data, 'application/xml');
+  const parse = (data) => {
+    const feedTitle = data.getElementsByTagName('title')[0].textContent;
+    const feedDescription = data.getElementsByTagName('description')[0].textContent;
+    const getFeedArticles = data.querySelectorAll('item');
+    const feedArticles = [...getFeedArticles].map((getFeedArticle) => {
+      const feedArticle = new Map();
+      const articleTitle = getFeedArticle.children[0].textContent;
+      const articleDescription = getFeedArticle.children[1].textContent;
+      const articleLink = getFeedArticle.children[2].textContent;
+      feedArticle.set('title', articleTitle);
+      feedArticle.set('description', articleDescription);
+      feedArticle.set('link', articleLink);
+      return feedArticle;
+    });
+    return {
+      feedTitle,
+      feedDescription,
+      feedArticles,
+    };
   };
 
-  const createHtmlItems = items => [...items].map(
-    (item, index) => `<li>
-      <a href="${item.children[2].textContent}" data-toggle="modal" data-target="#item-${state.feedNumber}-${index}">${item.children[0].textContent}</a>
+  const createHtmlItems = items => items.map(
+    (item, index) => `<li class="mb-1">
+      <a href="${item.get('link')}">${item.get('title')}</a>
+      <button type="button" class="btn btn-info" data-target="#item-${state.feedNumber}-${index}" data-toggle="modal">Description</button>
       <div class="modal fade" id="item-${state.feedNumber}-${index}" tabindex="-1" role="dialog" aria-labelledby="exampleModalLabel" aria-hidden="true">
         <div class="modal-dialog" role="document">
           <div class="modal-content">
@@ -41,62 +75,46 @@ export default () => {
                 <span aria-hidden="true">&times;</span>
               </button>
             </div>
-            <div class="modal-body">${item.children[1].textContent}</div>
+            <div class="modal-body">${item.get('description')}</div>
          </div>
         </div>
       </div>
       </li>`,
   ).join('');
 
-  const updateArticles = (feed) => {
-    const timer = setTimeout(() => {
-      axios({
-        method: 'get',
-        url: `https://cors-anywhere.herokuapp.com/${feed}`,
-      })
+  const updateArticles = (feedUrl) => {
+    setTimeout(() => {
+      axios.get(`${corsProxy}${feedUrl}`)
         .then((response) => {
-          const doc = parse(response);
-          state.updatedFeedName = feed;
-          state.updatedFeedDoc = doc;
+          const parser = new DOMParser();
+          const rss = parser.parseFromString(response.data, 'application/xml');
+          const updatedFeed = parse(rss);
+          state.updatedFeedUrl = feedUrl;
+          state.updatedFeedArticles = updatedFeed.feedArticles;
         })
         .finally(() => {
-          clearTimeout(timer);
-          updateArticles(feed);
+          updateArticles(feedUrl);
         });
-    }, 2000);
+    }, 5000);
   };
 
-  watch(state, ['inputValid', 'inputError'], () => {
+  const showError = (errorKey) => {
+    addFeedInput.classList.add('is-invalid');
+    errorShow.textContent = i18next.t(errorKey);
+  };
+
+  watch(state, 'error', () => {
     addFeedInput.classList.remove('is-valid', 'is-invalid');
-    if (state.inputValid === null) {
+    if (state.error === null) {
+      addFeedInput.value = '';
       return;
     }
-    if (!state.inputValid) {
-      addFeedInput.classList.add('is-invalid');
-      errorShow.textContent = state.inputError;
+    if (state.error === 'valid') {
+      addFeedInput.classList.add('is-valid');
       return;
     }
-    addFeedInput.classList.add('is-valid');
-  });
-
-  watch(state, 'formError', () => {
-    formErrorField.textContent = state.formError;
-  });
-
-  watch(state, 'feedToAdd', () => {
-    const items = state.feedToAdd.querySelectorAll('item');
-    const newItems = createHtmlItems(items);
-    const row = document.createElement('div');
-    row.classList.add('row');
-    row.setAttribute('data-feed', state.addedFeeds[state.addedFeeds.length - 1]);
-    row.innerHTML = `
-      <div class="col-12">
-        <h2>${state.feedToAdd.getElementsByTagName('title')[0].textContent}</h2>
-        <h5>${state.feedToAdd.getElementsByTagName('description')[0].textContent}</h5>
-        <ul>${newItems}</ul>
-      </div>
-    `;
-    rssFeedsContainer.append(row);
+    showError(state.error);
+    addFeedInput.classList.add('is-invalid');
   });
 
   watch(state, 'formStatus', () => {
@@ -107,70 +125,80 @@ export default () => {
     formSpinner.classList.remove('d-none');
   });
 
-  watch(state, 'updatedFeedDoc', () => {
-    const updatedFeedName = document.querySelector(`[data-feed="${state.updatedFeedName}"]`);
-    const currentArticles = updatedFeedName.querySelectorAll('li a');
-    const currentHrefs = [...currentArticles].map(currentArticle => currentArticle.href);
-    const updatedArticles = state.updatedFeedDoc.querySelectorAll('item');
-    const newArticles = [...updatedArticles].filter(
-      updatedArticle => !currentHrefs.includes(updatedArticle.children[2].textContent),
+  watch(state, 'newFeedUrl', () => {
+    const articlesToAdd = createHtmlItems(state.newFeed.articles);
+    const row = document.createElement('div');
+    row.classList.add('row');
+    row.setAttribute('data-feed', state.newFeedUrl);
+    row.innerHTML = `
+      <div class="col-12">
+        <h2>${state.newFeed.title}</h2>
+        <h5>${state.newFeed.description}</h5>
+        <ul>${articlesToAdd}</ul>
+      </div>
+    `;
+    rssFeedsContainer.append(row);
+    updateArticles(state.newFeedUrl);
+  });
+
+  watch(state, 'updatedFeedArticles', () => {
+    const updatedFeed = document.querySelector(`[data-feed="${state.updatedFeedUrl}"]`);
+    const currentArticles = updatedFeed.querySelectorAll('li a');
+    const currentLinks = [...currentArticles].map(currentArticle => currentArticle.href);
+    const newArticles = state.updatedFeedArticles.filter(
+      updatedArticle => !currentLinks.includes(updatedArticle.get('link')),
     );
-    const currentUl = updatedFeedName.querySelector('ul');
+    const currentUl = updatedFeed.querySelector('ul');
     const newItems = createHtmlItems(newArticles);
     currentUl.insertAdjacentHTML('beforeEnd', newItems);
   });
 
   const inputValidate = () => {
     if (addFeedInput.value.length === 0) {
-      state.inputValid = null;
+      state.error = null;
       return;
     }
     if (!validator.isURL(addFeedInput.value)) {
-      state.inputValid = false;
-      state.inputError = 'Please enter correct URL';
+      state.error = 'incorrectUrl';
       return;
     }
     if (state.addedFeeds.indexOf(addFeedInput.value) > -1) {
-      state.inputValid = false;
-      state.inputError = 'This feed has already been added';
+      state.error = 'doubledUrl';
       return;
     }
-    state.inputValid = true;
+    state.error = 'valid';
   };
   addFeedInput.addEventListener('input', inputValidate);
 
-  const getRssFeed = (url) => {
+  const addNewFeed = (e) => {
+    e.preventDefault();
+    if (!state.error) {
+      return;
+    }
+    const url = addFeedInput.value;
     state.formStatus = 'pending';
-    axios({
-      method: 'get',
-      url: `https://cors-anywhere.herokuapp.com/${url}`,
-    })
+    axios.get(`${corsProxy}${url}`)
       .then((response) => {
         state.formStatus = null;
-        const doc = parse(response);
-        if (doc.documentElement.tagName !== 'rss') {
-          state.formError = 'There is no RSS channel on this address';
+        const parser = new DOMParser();
+        const rss = parser.parseFromString(response.data, 'application/xml');
+        if (rss.documentElement.tagName !== 'rss') {
+          state.error = 'noRss';
           return;
         }
-        state.inputValid = null;
+        const newFeed = parse(rss);
+        state.newFeedUrl = url;
+        state.newFeed.title = newFeed.feedTitle;
+        state.newFeed.description = newFeed.feedDescription;
+        state.newFeed.articles = newFeed.feedArticles;
         state.feedNumber += 1;
-        addFeedInput.value = '';
-        state.feedToAdd = doc;
+        state.error = null;
         state.addedFeeds.push(url);
-        updateArticles(state.addedFeeds[state.addedFeeds.length - 1]);
       })
       .catch((error) => {
         state.formStatus = null;
-        state.formError = error.message;
+        state.error = error.message;
       });
   };
-
-  const addFeed = (e) => {
-    e.preventDefault();
-    state.formError = null;
-    if (state.inputValid) {
-      getRssFeed(addFeedInput.value);
-    }
-  };
-  addFeedForm.addEventListener('submit', addFeed);
+  addFeedForm.addEventListener('submit', addNewFeed);
 };
