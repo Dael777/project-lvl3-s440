@@ -29,7 +29,7 @@ export default () => {
     },
     updatedFeedUrl: null,
     updatedFeedArticles: null,
-    formStatus: null,
+    formStatus: 'resting',
     feedNumber: 0,
     addedFeeds: [],
     error: null,
@@ -40,11 +40,17 @@ export default () => {
   const addFeedForm = document.querySelector('#add-feed-form');
   const rssFeedsContainer = document.querySelector('#rss-feeds');
   const formSpinner = document.querySelector('#form-spinner');
+  const btnSubmit = document.querySelector('#btn-submit');
 
-  const parse = (data) => {
-    const feedTitle = data.getElementsByTagName('title')[0].textContent;
-    const feedDescription = data.getElementsByTagName('description')[0].textContent;
-    const getFeedArticles = data.querySelectorAll('item');
+  const parseRss = ({ data }) => {
+    const parser = new DOMParser();
+    const rss = parser.parseFromString(data, 'application/xml');
+    if (rss.documentElement.tagName !== 'rss') {
+      return false;
+    }
+    const feedTitle = rss.getElementsByTagName('title')[0].textContent;
+    const feedDescription = rss.getElementsByTagName('description')[0].textContent;
+    const getFeedArticles = rss.querySelectorAll('item');
     const feedArticles = [...getFeedArticles].map((getFeedArticle) => {
       const feedArticle = new Map();
       const articleTitle = getFeedArticle.children[0].textContent;
@@ -86,9 +92,7 @@ export default () => {
     setTimeout(() => {
       axios.get(`${corsProxy}${feedUrl}`)
         .then((response) => {
-          const parser = new DOMParser();
-          const rss = parser.parseFromString(response.data, 'application/xml');
-          const updatedFeed = parse(rss);
+          const updatedFeed = parseRss(response);
           state.updatedFeedUrl = feedUrl;
           state.updatedFeedArticles = updatedFeed.feedArticles;
         })
@@ -118,10 +122,12 @@ export default () => {
   });
 
   watch(state, 'formStatus', () => {
-    if (!state.formStatus) {
+    if (state.formStatus === 'resting') {
       formSpinner.classList.add('d-none');
+      btnSubmit.removeAttribute('disabled');
       return;
     }
+    btnSubmit.setAttribute('disabled', '');
     formSpinner.classList.remove('d-none');
   });
 
@@ -179,14 +185,12 @@ export default () => {
     state.formStatus = 'pending';
     axios.get(`${corsProxy}${url}`)
       .then((response) => {
-        state.formStatus = null;
-        const parser = new DOMParser();
-        const rss = parser.parseFromString(response.data, 'application/xml');
-        if (rss.documentElement.tagName !== 'rss') {
+        state.formStatus = 'resting';
+        const newFeed = parseRss(response);
+        if (!newFeed) {
           state.error = 'noRss';
           return;
         }
-        const newFeed = parse(rss);
         state.newFeedUrl = url;
         state.newFeed.title = newFeed.feedTitle;
         state.newFeed.description = newFeed.feedDescription;
@@ -196,7 +200,7 @@ export default () => {
         state.addedFeeds.push(url);
       })
       .catch((error) => {
-        state.formStatus = null;
+        state.formStatus = 'resting';
         state.error = error.message;
       });
   };
